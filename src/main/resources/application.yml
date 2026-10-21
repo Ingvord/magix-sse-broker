@@ -3,6 +3,10 @@ micronaut:
     name: magix
   server:
     port: 8888
+    netty:
+      # Never compress responses. Event streams are tiny frames, and clients that read the raw socket
+      # (e.g. the PyPI package "sseclient") cannot decode a gzip body, which HTTP libraries request by default.
+      compression-threshold: -1
   metrics:
     enabled: true
 endpoints:

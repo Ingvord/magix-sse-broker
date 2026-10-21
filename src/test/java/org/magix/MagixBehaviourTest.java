@@ -59,8 +59,8 @@ class MagixBehaviourTest {
         return subscribeTo("/magix/api/subscribe" + (channels == null ? "" : "?channel=" + channels));
     }
 
-    private SseTestClient subscribeTo(String path) throws Exception {
-        var client = new SseTestClient(uri(path));
+    private SseTestClient subscribeTo(String path, String... requestHeaders) throws Exception {
+        var client = new SseTestClient(uri(path), requestHeaders);
         // the first keepalive is sent once the subscription is registered
         assertNotNull(client.nextComment(TIMEOUT_MS), "subscription was not confirmed");
         return client;
@@ -84,6 +84,24 @@ class MagixBehaviourTest {
             assertEquals("text/event-stream", headers.firstValue("Content-Type").orElse(null));
             assertEquals("no-cache", headers.firstValue("Cache-Control").orElse(null));
             assertEquals("no", headers.firstValue("X-Accel-Buffering").orElse(null));
+        }
+    }
+
+    /**
+     * Some SSE clients (e.g. the PyPI package "sseclient") read the raw socket and cannot decode a
+     * compressed body, yet HTTP libraries such as Python's requests advertise gzip by default.
+     */
+    @Test
+    void eventStreamIsNotCompressedEvenWhenClientAcceptsGzip() throws Exception {
+        try (var sub = subscribeTo("/magix/api/subscribe", "Accept-Encoding", "gzip, deflate")) {
+            var headers = sub.headers(TIMEOUT_MS);
+            assertNotNull(headers);
+            assertEquals(null, headers.firstValue("Content-Encoding").orElse(null));
+
+            broadcast("plain", "{\"readable\":true}");
+            var event = sub.next(TIMEOUT_MS);
+            assertNotNull(event, "stream was not readable as plain text");
+            assertEquals("{\"readable\":true}", event.data());
         }
     }
 

@@ -28,18 +28,25 @@ final class SseTestClient implements AutoCloseable {
     private final CompletableFuture<HttpHeaders> headers = new CompletableFuture<>();
     private final HttpClient http = HttpClient.newHttpClient();
     private final URI uri;
+    private final String[] requestHeaders;
     private final Thread reader;
     private volatile InputStream body;
 
-    SseTestClient(URI uri) {
+    /** @param requestHeaders extra request headers as alternating names and values */
+    SseTestClient(URI uri, String... requestHeaders) {
         this.uri = uri;
+        this.requestHeaders = requestHeaders;
         reader = new Thread(this::read, "sse-test-client");
         reader.setDaemon(true);
         reader.start();
     }
 
     private void read() {
-        var request = HttpRequest.newBuilder(uri).header("Accept", "text/event-stream").build();
+        var builder = HttpRequest.newBuilder(uri).header("Accept", "text/event-stream");
+        if (requestHeaders.length > 0) {
+            builder.headers(requestHeaders);
+        }
+        var request = builder.build();
         try {
             var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
             headers.complete(response.headers());
