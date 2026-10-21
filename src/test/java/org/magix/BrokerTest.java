@@ -7,6 +7,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -59,6 +60,27 @@ class BrokerTest {
 
         assertEquals(IntStream.range(0, 10).boxed().toList(), fast.get(5, TimeUnit.SECONDS));
         slow.dispose();
+    }
+
+    @Test
+    void channelFilterOnlyPassesMatchingChannelsAndSavesBufferSpace() {
+        var broker = broker(2);
+
+        StepVerifier.create(broker.subscribe(Set.of("wanted")).map(m -> m.payload().getIntValue()), 0)
+                .expectSubscription()
+                .then(() -> {
+                    broker.publish("wanted", JsonNode.createNumberNode(1));
+                    for (int i = 0; i < 50; i++) {
+                        broker.publish("other", JsonNode.createNumberNode(99));
+                    }
+                    broker.publish("wanted", JsonNode.createNumberNode(2));
+                })
+                .thenRequest(10)
+                .expectNext(1, 2)
+                .thenCancel()
+                .verify(Duration.ofSeconds(5));
+
+        assertEquals(0, metrics.counter("magix.events.dropped").count());
     }
 
     @Test

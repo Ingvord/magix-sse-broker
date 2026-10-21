@@ -9,6 +9,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -39,8 +40,16 @@ public class Broker {
         return message;
     }
 
+    /** Subscribes to every channel. */
     public Flux<Message> subscribe() {
+        return subscribe(Set.of());
+    }
+
+    /** @param channels channels to receive; empty means all of them */
+    public Flux<Message> subscribe(Set<String> channels) {
+        // filter first so events the client did not ask for never occupy its buffer
         return sink.asFlux()
+                .filter(m -> channels.isEmpty() || channels.contains(m.channel()))
                 .onBackpressureBuffer(bufferSize, overflow -> dropped.increment(), BufferOverflowStrategy.DROP_OLDEST);
     }
 }

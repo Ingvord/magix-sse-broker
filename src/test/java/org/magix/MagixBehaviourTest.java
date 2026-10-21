@@ -51,7 +51,11 @@ class MagixBehaviourTest {
     }
 
     private SseTestClient subscribe() throws Exception {
-        var client = new SseTestClient(uri("/magix/api/subscribe"));
+        return subscribe(null);
+    }
+
+    private SseTestClient subscribe(String channels) throws Exception {
+        var client = new SseTestClient(uri("/magix/api/subscribe" + (channels == null ? "" : "?channel=" + channels)));
         // the first keepalive is sent once the subscription is registered
         assertNotNull(client.nextComment(TIMEOUT_MS), "subscription was not confirmed");
         return client;
@@ -107,6 +111,24 @@ class MagixBehaviourTest {
             var defaulted = sub.next(TIMEOUT_MS);
             assertNotNull(defaulted, "no event received for default channel");
             assertEquals("message", defaulted.name());
+        }
+    }
+
+    /** Issue 5: subscribers can restrict themselves to some channels; no filter means all. */
+    @Test
+    void subscriberOnlyReceivesRequestedChannels() throws Exception {
+        try (var onlyA = subscribe("a"); var aAndB = subscribe("a,b"); var all = subscribe()) {
+            broadcast("c", "{\"n\":0}");
+            broadcast("a", "{\"n\":1}");
+            broadcast("b", "{\"n\":2}");
+
+            assertEquals("a", onlyA.next(TIMEOUT_MS).name());
+            assertNull(onlyA.next(300), "channel b leaked to a subscriber of a");
+
+            assertEquals("a", aAndB.next(TIMEOUT_MS).name());
+            assertEquals("b", aAndB.next(TIMEOUT_MS).name());
+
+            assertEquals("c", all.next(TIMEOUT_MS).name());
         }
     }
 

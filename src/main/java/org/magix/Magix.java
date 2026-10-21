@@ -10,6 +10,9 @@ import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Controller("/magix/api")
 public class Magix {
@@ -26,8 +29,8 @@ public class Magix {
 
     @Get("/subscribe")
     @Produces(MediaType.TEXT_EVENT_STREAM)
-    public HttpResponse<Flux<byte[]>> subscribe(){
-        Flux<byte[]> events = broker.subscribe().map(this::frame);
+    public HttpResponse<Flux<byte[]>> subscribe(@QueryValue(defaultValue = "") String channel){
+        Flux<byte[]> events = broker.subscribe(channels(channel)).map(this::frame);
         // The first keepalive is emitted after the broker subscription is registered, so clients get a
         // first byte immediately and know that nothing published from now on will be missed.
         Flux<byte[]> keepalive = Flux.interval(config.getHeartbeat())
@@ -45,6 +48,14 @@ public class Magix {
         }
         broker.publish(channel, message);
         return HttpResponse.ok();
+    }
+
+    /** Parses "a,b" into a set; blank means no filtering. */
+    private static Set<String> channels(String csv) {
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(name -> !name.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private byte[] frame(Message message) {
