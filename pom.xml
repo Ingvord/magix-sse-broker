@@ -46,8 +46,8 @@
       <scope>compile</scope>
     </dependency>
     <dependency>
-      <groupId>io.micronaut.rxjava3</groupId>
-      <artifactId>micronaut-rxjava3</artifactId>
+      <groupId>io.micronaut.reactor</groupId>
+      <artifactId>micronaut-reactor</artifactId>
     </dependency>
     <dependency>
       <groupId>jakarta.annotation</groupId>
