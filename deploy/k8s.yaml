@@ -1,0 +1,70 @@
+# kubectl apply -f deploy/k8s.yaml
+#
+# The image is not published anywhere. Build it and make it available to your cluster first, e.g.
+#   docker build -t magix:native .
+#   kind load docker-image magix:native          # kind
+#   minikube image load magix:native             # minikube
+#   docker save magix:native | microk8s ctr image import -   # MicroK8s
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magix
+  labels:
+    app: magix
+spec:
+  replicas: 1 # the broker is in-memory and single node: more replicas would not share subscribers
+  selector:
+    matchLabels:
+      app: magix
+  template:
+    metadata:
+      labels:
+        app: magix
+    spec:
+      containers:
+        - name: magix
+          image: magix:native
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8888
+          env:
+            - name: MAGIX_HEARTBEAT
+              value: 15s
+            - name: MAGIX_BUFFER_SIZE
+              value: "256"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8888
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8888
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: magix
+  labels:
+    app: magix
+spec:
+  selector:
+    app: magix
+  ports:
+    - port: 8888
+      targetPort: 8888
