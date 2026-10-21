@@ -3,6 +3,15 @@ micronaut:
     name: magix
   server:
     port: 8888
+  metrics:
+    enabled: true
+endpoints:
+  health:
+    enabled: true
+    sensitive: false
+  metrics:
+    enabled: true
+    sensitive: false
 netty:
   default:
     allocator:

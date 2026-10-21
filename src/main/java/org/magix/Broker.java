@@ -2,21 +2,22 @@ package org.magix;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micronaut.context.annotation.Context;
 import io.micronaut.json.tree.JsonNode;
-import jakarta.inject.Singleton;
 import reactor.core.publisher.BufferOverflowStrategy;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.time.Instant;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * In-memory fan-out. Nothing is retained for late subscribers, and every subscriber has its own
  * bounded buffer that drops its oldest events, so a slow client never delays the others.
  */
-@Singleton
+@Context // eager, so its meters exist from startup rather than from the first request
 public class Broker {
 
     private final Sinks.Many<Message> sink = Sinks.many().multicast().directBestEffort();
@@ -24,11 +25,13 @@ public class Broker {
     private final int bufferSize;
     private final Counter published;
     private final Counter dropped;
+    private final AtomicInteger active = new AtomicInteger();
 
     public Broker(MagixConfig config, MeterRegistry metrics) {
         this.bufferSize = config.getBufferSize();
         this.published = metrics.counter("magix.events.published");
         this.dropped = metrics.counter("magix.events.dropped");
+        metrics.gauge("magix.subscribers.active", active);
     }
 
     public Message publish(String channel, JsonNode payload) {
@@ -50,6 +53,8 @@ public class Broker {
         // filter first so events the client did not ask for never occupy its buffer
         return sink.asFlux()
                 .filter(m -> channels.isEmpty() || channels.contains(m.channel()))
-                .onBackpressureBuffer(bufferSize, overflow -> dropped.increment(), BufferOverflowStrategy.DROP_OLDEST);
+                .onBackpressureBuffer(bufferSize, overflow -> dropped.increment(), BufferOverflowStrategy.DROP_OLDEST)
+                .doOnSubscribe(subscription -> active.incrementAndGet())
+                .doFinally(signal -> active.decrementAndGet());
     }
 }

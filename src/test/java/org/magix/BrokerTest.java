@@ -63,6 +63,22 @@ class BrokerTest {
     }
 
     @Test
+    void activeSubscriberGaugeFollowsSubscriptions() {
+        var broker = broker(4);
+        var gauge = metrics.get("magix.subscribers.active").gauge();
+        assertEquals(0, gauge.value());
+
+        var first = broker.subscribe().subscribe();
+        var second = broker.subscribe(Set.of("a")).subscribe();
+        assertEquals(2, gauge.value());
+
+        first.dispose();
+        assertEquals(1, gauge.value());
+        second.dispose();
+        assertEquals(0, gauge.value());
+    }
+
+    @Test
     void channelFilterOnlyPassesMatchingChannelsAndSavesBufferSpace() {
         var broker = broker(2);
 

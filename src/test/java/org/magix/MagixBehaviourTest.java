@@ -186,6 +186,34 @@ class MagixBehaviourTest {
         }
     }
 
+    private double metric(String name) throws Exception {
+        var response = http.send(HttpRequest.newBuilder(uri("/metrics/" + name)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        var m = java.util.regex.Pattern.compile("\"value\":([0-9.eE+-]+)").matcher(response.body());
+        assertTrue(m.find(), response.body());
+        return Double.parseDouble(m.group(1));
+    }
+
+    @Test
+    void metricsExposeSubscribersPublishedAndDroppedEvents() throws Exception {
+        assertEquals(0, metric("magix.subscribers.active"));
+        try (var sub = subscribe()) {
+            assertEquals(1, metric("magix.subscribers.active"));
+            broadcast("a", "{}");
+            broadcast("a", "{}");
+            assertNotNull(sub.next(TIMEOUT_MS));
+            assertEquals(2, metric("magix.events.published"));
+            assertEquals(0, metric("magix.events.dropped"));
+        }
+    }
+
+    @Test
+    void healthEndpointIsUp() throws Exception {
+        var response = http.send(HttpRequest.newBuilder(uri("/health")).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"UP\""), response.body());
+    }
+
     @Test
     void twoSubscribersBothReceiveBroadcast() throws Exception {
         try (var first = subscribe(); var second = subscribe()) {
