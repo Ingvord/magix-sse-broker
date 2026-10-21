@@ -1,0 +1,14 @@
+# JVM image, kept for comparison with the native one.  Build:  docker build -f Dockerfile.jvm -t magix:jvm .
+FROM eclipse-temurin:21-jdk AS build
+WORKDIR /src
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+COPY src src
+RUN ./mvnw -B -DskipTests package
+
+FROM eclipse-temurin:21-jre
+RUN useradd --system --no-create-home magix
+USER magix
+COPY --from=build /src/target/magix-0.1.jar /magix.jar
+EXPOSE 8888
+ENTRYPOINT ["java", "-jar", "/magix.jar"]
