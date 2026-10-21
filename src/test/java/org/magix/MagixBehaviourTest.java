@@ -169,6 +169,23 @@ class MagixBehaviourTest {
         }
     }
 
+    /** Issue 6: broadcast is fire-and-forget, so it answers 202 with the id it assigned. */
+    @Test
+    void broadcastAnswersAcceptedWithAssignedId() throws Exception {
+        try (var sub = subscribe()) {
+            var request = HttpRequest.newBuilder(uri("/magix/api/broadcast?channel=a"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"n\":1}"))
+                    .build();
+            var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            var event = sub.next(TIMEOUT_MS);
+            assertNotNull(event);
+            assertEquals(202, response.statusCode());
+            assertEquals("{\"id\":" + event.id() + "}", response.body());
+        }
+    }
+
     @Test
     void twoSubscribersBothReceiveBroadcast() throws Exception {
         try (var first = subscribe(); var second = subscribe()) {

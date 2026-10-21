@@ -48,8 +48,8 @@ public class Magix {
         if (!SseFrames.isValidName(channel)) {
             return HttpResponse.badRequest("channel must not contain line breaks");
         }
-        broker.publish(channel, message);
-        return HttpResponse.ok();
+        var published = broker.publish(channel, message);
+        return HttpResponse.accepted().body(new Receipt(published.id()));
     }
 
     /** Parses "a,b" into a set; blank means no filtering. */
