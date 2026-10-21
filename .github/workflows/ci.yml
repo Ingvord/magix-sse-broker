@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: ./mvnw -B verify
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports
+          path: target/surefire-reports
+
+  python-client:
+    name: Python client against the packaged jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: clients/python/requirements-dev.txt
+      - run: ./mvnw -B -DskipTests package
+      - run: pip install -r clients/python/requirements-dev.txt
+      - run: clients/python/run-tests.sh
+
+  native:
+    name: Native image and measurements
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: "21"
+          distribution: graalvm-community
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: maven
+      - name: Build the native executable (target/magix)
+        run: ./mvnw -B -Dpackaging=native-image -DskipTests clean package
+      # The JVM numbers should come from a regular JDK, not from GraalVM running in JVM mode.
+      # GRAALVM_HOME stays set, so the report still records the native-image version.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      # After the native build and without "clean": the native build leaves a thin jar behind.
+      - name: Build the shaded jar
+        run: ./mvnw -B -DskipTests package
+      - name: Build the Docker images
+        run: |
+          docker build -t magix:native .
+          docker build -f Dockerfile.jvm -t magix:jvm .
+      - name: Measure
+        run: bench/measure.sh --out measurements.md
+      - name: Publish the measurements as the job summary
+        run: |
+          {
+            cat measurements.md
+            echo
+            echo "_Measured on a shared GitHub-hosted runner. Compare with the local results in \`bench/results/\` only with that in mind._"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: measurements
+          path: measurements.md
