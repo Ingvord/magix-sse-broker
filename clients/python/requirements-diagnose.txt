@@ -1,0 +1,3 @@
+-r requirements.txt
+requests>=2.32
+sseclient-py>=1.8
