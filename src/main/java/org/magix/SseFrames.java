@@ -15,8 +15,8 @@ final class SseFrames {
         return KEEPALIVE;
     }
 
-    static byte[] event(String name, byte[] jsonData) {
-        var head = ("event: " + name + "\ndata: ").getBytes(StandardCharsets.UTF_8);
+    static byte[] event(String name, long id, byte[] jsonData) {
+        var head = ("event: " + name + "\nid: " + id + "\ndata: ").getBytes(StandardCharsets.UTF_8);
         var frame = new byte[head.length + jsonData.length + 2];
         System.arraycopy(head, 0, frame, 0, head.length);
         System.arraycopy(jsonData, 0, frame, head.length, jsonData.length);

@@ -16,6 +16,7 @@ import java.net.Socket;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins down the externally visible behaviour of the broker. Every test gets a fresh application
@@ -55,7 +56,11 @@ class MagixBehaviourTest {
     }
 
     private SseTestClient subscribe(String channels) throws Exception {
-        var client = new SseTestClient(uri("/magix/api/subscribe" + (channels == null ? "" : "?channel=" + channels)));
+        return subscribeTo("/magix/api/subscribe" + (channels == null ? "" : "?channel=" + channels));
+    }
+
+    private SseTestClient subscribeTo(String path) throws Exception {
+        var client = new SseTestClient(uri(path));
         // the first keepalive is sent once the subscription is registered
         assertNotNull(client.nextComment(TIMEOUT_MS), "subscription was not confirmed");
         return client;
@@ -129,6 +134,38 @@ class MagixBehaviourTest {
             assertEquals("b", aAndB.next(TIMEOUT_MS).name());
 
             assertEquals("c", all.next(TIMEOUT_MS).name());
+        }
+    }
+
+    /** Issue 7: every message carries an id; the full envelope is available on request. */
+    @Test
+    void eventsCarryIncreasingIds() throws Exception {
+        try (var sub = subscribe()) {
+            broadcast("a", "{\"n\":1}");
+            broadcast("a", "{\"n\":2}");
+
+            var first = sub.next(TIMEOUT_MS);
+            var second = sub.next(TIMEOUT_MS);
+            assertNotNull(first);
+            assertNotNull(second);
+            assertEquals("{\"n\":1}", first.data());
+            assertEquals(Long.parseLong(first.id()) + 1, Long.parseLong(second.id()));
+        }
+    }
+
+    @Test
+    void envelopeOptInWrapsPayloadWithIdChannelAndTimestamp() throws Exception {
+        try (var sub = subscribeTo("/magix/api/subscribe?envelope=true")) {
+            broadcast("sensors", "{\"temp\":21.5}");
+
+            var event = sub.next(TIMEOUT_MS);
+            assertNotNull(event);
+            assertEquals("sensors", event.name());
+            var data = event.data();
+            assertTrue(data.contains("\"id\":" + event.id()), data);
+            assertTrue(data.contains("\"channel\":\"sensors\""), data);
+            assertTrue(data.contains("\"payload\":{\"temp\":21.5}"), data);
+            assertTrue(data.matches(".*\"timestamp\":\"\\d{4}-\\d{2}-\\d{2}T[^\"]+Z\".*"), data);
         }
     }
 

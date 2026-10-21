@@ -29,8 +29,10 @@ public class Magix {
 
     @Get("/subscribe")
     @Produces(MediaType.TEXT_EVENT_STREAM)
-    public HttpResponse<Flux<byte[]>> subscribe(@QueryValue(defaultValue = "") String channel){
-        Flux<byte[]> events = broker.subscribe(channels(channel)).map(this::frame);
+    public HttpResponse<Flux<byte[]>> subscribe(
+            @QueryValue(defaultValue = "") String channel,
+            @QueryValue(defaultValue = "false") boolean envelope){
+        Flux<byte[]> events = broker.subscribe(channels(channel)).map(m -> frame(m, envelope));
         // The first keepalive is emitted after the broker subscription is registered, so clients get a
         // first byte immediately and know that nothing published from now on will be missed.
         Flux<byte[]> keepalive = Flux.interval(config.getHeartbeat())
@@ -58,9 +60,11 @@ public class Magix {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    private byte[] frame(Message message) {
+    /** The data field is the raw payload, or the whole envelope when the client asked for it. */
+    private byte[] frame(Message message, boolean envelope) {
         try {
-            return SseFrames.event(message.channel(), json.writeValueAsBytes(message.payload()));
+            var data = envelope ? json.writeValueAsBytes(message) : json.writeValueAsBytes(message.payload());
+            return SseFrames.event(message.channel(), message.id(), data);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
