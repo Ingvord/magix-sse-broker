@@ -98,6 +98,8 @@ Idle subscriptions receive a comment line (`: keepalive`) every `magix.heartbeat
 
 **Channel filtering.** The filter is applied before the per-subscriber buffer, so events a client did not ask for never take up its buffer space.
 
+**No response compression.** Event frames are tiny, and some SSE clients read the raw socket and cannot decode a gzip body, which HTTP libraries request by default. Responses are never compressed (`micronaut.server.netty.compression-threshold: -1`).
+
 **Hand-written SSE frames.** Micronaut's `Event` encoder always writes a `data:` line, so a comment-only keepalive would come out as `data: null`, which clients dispatch as a real event. The broker serialises the few frame types itself (`SseFrames`). Channel names with line breaks are rejected because they could otherwise forge frames.
 
 ## Measured results
@@ -124,22 +126,23 @@ Broadcast-to-receive latency, P50 / P99 (200 warm-up broadcasts, then 500 measur
 
 How to read these: startup is measured from just before the process is spawned until `GET /` first answers 200. The load generator is a single-threaded Python process on the same host, so latencies include client-side scheduling, and the P99 values are indicative only (they varied between repeated runs on this shared machine). The JVM image is large because it uses the full `eclipse-temurin:21-jre` base.
 
-The 2022 case study reported about 18 ms startup and a 56 MB image for the original version. This build measures 47 ms by the definition above and an 80.9 MB executable (97.6 MB image); the size difference has not been investigated.
+The 2022 case study reported about 18 ms startup and a 55.92 MB native image (the executable) for the original version. This build measures 47 ms by the definition above and an 80.9 MB executable (97.6 MB Docker image); the size difference has not been investigated.
 
 ## The 2022 Python client hang
 
-The case study ended with an unresolved hang between the SSE endpoint and a Python SSE client. Reproducing it with `requests` + `sseclient-py` and `httpx` + `httpx-sse` against the pre-rework broker showed two defects that match the symptom:
+The case study ended with a Python client that "simply hangs on connect()". Reproducing it with the package the article names (`sseclient`) and two other Python clients against the pre-rework broker showed three defects:
 
-1. **No bytes until the first event.** The old server sent no response headers until something was published, so a client's connect call blocked on an idle broker.
-2. **The stream died when the buffer overflowed.** After about 200 broadcasts with nobody subscribed, the single shared buffer failed with a backpressure error, and later events did not reach the clients tried.
+1. **No bytes until the first event.** The old server sent no response headers until something was published, so a client's connect call blocked on an idle broker. This matches the article's description.
+2. **A gzipped event stream.** `requests` advertises gzip by default and the server compressed the stream. `sseclient` reads the raw socket and cannot decode that, so it connected but never saw an event.
+3. **The stream died when the buffer overflowed.** After about 200 broadcasts with nobody subscribed, the single shared buffer failed with a backpressure error, and later events did not reach the clients tried.
 
-Both are fixed (immediate keepalive, per-subscriber buffers), and the Python test suite guards against the first. This establishes two matching defects, not the exact 2022 cause. The reproduction script, captured output, and caveats are in [`clients/python/`](clients/python/README.md).
+All three are fixed (immediate keepalive, no response compression, per-subscriber buffers) and guarded by tests that run in CI. This establishes three real defects, the first matching the article's symptom directly. It does not prove the exact 2022 cause, because that setup used other versions. The reproduction scripts, captured output, and caveats are in [`clients/python/`](clients/python/README.md).
 
 ## Development
 
 ```bash
 ./mvnw -B verify                                  # unit and integration tests (JDK 21)
-clients/python/run-tests.sh                       # Python client against the packaged jar
+clients/python/run-tests.sh                       # Python clients (incl. the article's sseclient) against the packaged jar
 bench/measure.sh --out report.md                  # needs the native executable, the jar and optionally the Docker images
 ```
 
