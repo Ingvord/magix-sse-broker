@@ -4,15 +4,14 @@ package org.magix;
 import io.micronaut.http.MediaType;
 import io.micronaut.http.annotation.*;
 import io.micronaut.http.sse.Event;
+import io.micronaut.json.tree.JsonNode;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.processors.MulticastProcessor;
-
-import java.util.Map;
 
 @Controller("/magix/api")
 public class Magix {
 
-    private final MulticastProcessor<Event<Object>> eventFlowableProcessor = MulticastProcessor.create();
+    private final MulticastProcessor<Event<JsonNode>> eventFlowableProcessor = MulticastProcessor.create();
 
     {
         eventFlowableProcessor.start();
@@ -20,13 +19,13 @@ public class Magix {
 
     @Get("/subscribe")
     @Produces(MediaType.TEXT_EVENT_STREAM)
-    public Flowable<Event<Object>> subscribe(){
+    public Flowable<Event<JsonNode>> subscribe(){
         return eventFlowableProcessor;
     }
 
 
     @Post("/broadcast")
-    public void broadcast(Object message, @QueryValue(defaultValue = "message") String channel){
+    public void broadcast(@Body JsonNode message, @QueryValue(defaultValue = "message") String channel){
         eventFlowableProcessor.onNext(
                 Event.of(message)
                         .name(channel)
