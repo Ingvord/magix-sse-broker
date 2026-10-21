@@ -219,7 +219,7 @@ def cmd_report(args):
     data = {name: json.load(open(path)) for name, path in (("JVM", args.jvm), ("Native", args.native)) if path}
     names = list(data)
     commit = sh("git", "rev-parse", "--short", "HEAD") or "unknown"
-    dirty = " (with uncommitted changes)" if sh("git", "status", "--porcelain") else ""
+    dirty = " (with uncommitted changes)" if sh("git", "status", "--porcelain", "--", ".", ":!bench/results") else ""
     out = [f"# magix measurements, {time.strftime('%Y-%m-%d')}", "",
            f"- Commit: `{commit}`{dirty}",
            f"- Hardware: {hardware()}",
