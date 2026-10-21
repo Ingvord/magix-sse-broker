@@ -153,6 +153,10 @@ The tests use only the JDK's HTTP client, so they exercise the broker the way `c
 - **At-most-once delivery.** Slow subscribers lose their oldest events (see above), and a `202` does not confirm delivery.
 - **Measurements come from one machine.** Treat them as a worked example of the method, not as a benchmark of your environment.
 
+## License
+
+[MIT](LICENSE)
+
 ## Links
 
 - [Case study (2022)](https://medium.com/@ingvord.mail/micronaut-graalvm-server-sent-events-based-message-broker-a-case-study-be6e67c16abe): the first native-image version and the hang.
