@@ -15,6 +15,7 @@ import java.net.Socket;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Pins down the externally visible behaviour of the broker. Every test gets a fresh application
@@ -24,8 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class MagixBehaviourTest {
 
     private static final long TIMEOUT_MS = 5_000;
-    /** Time for a just-opened subscription to be registered; the broker gives no signal for it. */
-    private static final long SETTLE_MS = 500;
 
     @Inject
     EmbeddedServer server;
@@ -53,8 +52,35 @@ class MagixBehaviourTest {
 
     private SseTestClient subscribe() throws Exception {
         var client = new SseTestClient(uri("/magix/api/subscribe"));
-        Thread.sleep(SETTLE_MS);
+        // the first keepalive is sent once the subscription is registered
+        assertNotNull(client.nextComment(TIMEOUT_MS), "subscription was not confirmed");
         return client;
+    }
+
+    /** Issue 3: idle connections need regular traffic, and clients need a first byte right away. */
+    @Test
+    void idleSubscriptionReceivesPeriodicKeepalives() throws Exception {
+        try (var sub = subscribe()) { // already waited for the initial keepalive
+            assertNotNull(sub.nextComment(2_000), "no second keepalive while idle");
+            assertNotNull(sub.nextComment(2_000), "no third keepalive while idle");
+            assertNull(sub.next(0), "keepalives must not surface as events");
+        }
+    }
+
+    @Test
+    void subscriptionResponseDisablesCachingAndProxyBuffering() throws Exception {
+        try (var sub = subscribe()) {
+            var headers = sub.headers(TIMEOUT_MS);
+            assertNotNull(headers);
+            assertEquals("text/event-stream", headers.firstValue("Content-Type").orElse(null));
+            assertEquals("no-cache", headers.firstValue("Cache-Control").orElse(null));
+            assertEquals("no", headers.firstValue("X-Accel-Buffering").orElse(null));
+        }
+    }
+
+    @Test
+    void channelWithLineBreakIsRejected() throws Exception {
+        assertEquals(400, broadcast("a%0Aevent:%20forged", "{}"));
     }
 
     @Test

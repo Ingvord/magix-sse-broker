@@ -6,10 +6,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +24,8 @@ final class SseTestClient implements AutoCloseable {
     record Event(String name, String id, String data) {}
 
     private final BlockingQueue<Event> events = new LinkedBlockingQueue<>();
+    private final BlockingQueue<String> comments = new LinkedBlockingQueue<>();
+    private final CompletableFuture<HttpHeaders> headers = new CompletableFuture<>();
     private final HttpClient http = HttpClient.newHttpClient();
     private final URI uri;
     private final Thread reader;
@@ -38,6 +42,7 @@ final class SseTestClient implements AutoCloseable {
         var request = HttpRequest.newBuilder(uri).header("Accept", "text/event-stream").build();
         try {
             var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            headers.complete(response.headers());
             body = response.body();
             try (var in = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
                 parse(in);
@@ -52,7 +57,9 @@ final class SseTestClient implements AutoCloseable {
         var data = new StringBuilder();
         String line;
         while ((line = in.readLine()) != null) {
-            if (line.isEmpty()) {
+            if (line.startsWith(":")) {
+                comments.add(line.substring(1).trim());
+            } else if (line.isEmpty()) {
                 if (data.length() > 0 || name != null) {
                     events.add(new Event(name, id, data.toString()));
                 }
@@ -73,6 +80,20 @@ final class SseTestClient implements AutoCloseable {
     /** Next event, or null if none arrives within the timeout. */
     Event next(long timeoutMillis) throws InterruptedException {
         return events.poll(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    /** Next comment line (without the leading colon), or null if none arrives within the timeout. */
+    String nextComment(long timeoutMillis) throws InterruptedException {
+        return comments.poll(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    /** Response headers, or null if the response did not start within the timeout. */
+    HttpHeaders headers(long timeoutMillis) throws Exception {
+        try {
+            return headers.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            return null;
+        }
     }
 
     @Override

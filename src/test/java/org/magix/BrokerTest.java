@@ -17,7 +17,10 @@ class BrokerTest {
     private final SimpleMeterRegistry metrics = new SimpleMeterRegistry();
 
     private Broker broker(int bufferSize) {
-        return new Broker(() -> bufferSize, metrics);
+        return new Broker(new MagixConfig() {
+            public int getBufferSize() { return bufferSize; }
+            public java.time.Duration getHeartbeat() { return java.time.Duration.ofSeconds(15); }
+        }, metrics);
     }
 
     private static Flux<Integer> numbers(Broker broker) {
